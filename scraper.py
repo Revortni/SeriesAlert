@@ -7,57 +7,102 @@ import pandas as pd
 import time
 
 BASE_URL = "https://fmovies.to"
+start = ""
 
 
 def get_last_epi(series_name, season):
 
     query = '{0}+{1}'.format(
             '+'.join(series_name.split()), season)
+    result = ""
     try:
-        res = requests.get(
-            '{0}/search?keyword={1}'.format(BASE_URL, str(query))
+        response = requests.get(
+            '{0}/search?keyword={1}'.format(
+                BASE_URL, query)
         )
-        if res.status_code != 200:
-            return ConnectionRefusedError
-        soup = BeautifulSoup(res.text, 'html.parser')
-        print(soup)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
         result = soup.find("a", class_="poster")
         result = result.get('href')
-    except ConnectionRefusedError:
-        return "Fmovies refused to connect"
+
+    except Exception as err:
+        return "Connection error:{err}", 0
     except:
-        return "Connection error"
+        return "Captcha content received", 0
+    # delay before next request
+    time.sleep(1)
 
     # Scrape last episode
     session = HTMLSession()
     req = session.get('{0}{1}'.format(BASE_URL, result))
-    req.html.render(timeout=40000)
-
-    server = req.html.find('.episodes.range.active')[0]
-    episodes = BeautifulSoup(server.html, 'html.parser')
-    e = episodes.find_all("a")
-    total_episodes = len(e)
-    last_episode_link = e[-1].get('href')
-    last_episode_num = e[-1].text
+    req.html.render(timeout=20000)
+    try:
+        server = req.html.find('.episodes.range.active')[1]
+        episodes = BeautifulSoup(server.html, 'html.parser')
+        e = episodes.find_all("a")
+        total_episodes = len(e)
+        last_episode_link = e[-1].get('href')
+        last_episode_num = int(e[-1].text)
+    except:
+        print(req.html)
+        return None, 0
     req.close()
     session.close()
+
     return {
         "name": series_name, "latest_episode_num": last_episode_num,
         "latest_episode_link": '{0}{1}'.format(BASE_URL, last_episode_link),
         "season": season
-    }
+    }, 1
 
 
-def main():
+def check_for_new_epi(series_name, season, watchedTill):
+    status = 0
+    print("Looking up '{0} s{1}'...".format(series_name, season), end="")
+    while not status:
+        info, status = get_last_epi(
+            series_name.capitalize(), str(season)
+        )
+
+        if not status:
+            print("Problem with connection. Retrying..")
+    print("DONE!")
+    diff = info['latest_episode_num'] - watchedTill
+    if(diff > 0):
+        info["new_epi_count"] = diff
+        return info
+    return None
+
+
+def seriesScraper():
     data = pd.read_csv('./data.csv', delimiter=',')
     series_name = data['series']
     season = data['season']
+    watchedTill = data['epi']
+    new_epi_of_series = []
+    print('\nScraping metadata on the list of series ...\n')
 
-    print('\nScraping metadata on the list of series ...\n\n')
     for i in range(len(series_name)):
-        print("Looking up '{0} s{1}'...".format(series_name[i], season[i]))
-        info = get_last_epi(series_name[i].capitalize(), str(season[i]))
-        print(info, end="\n\n\n")
+        epi = check_for_new_epi(series_name[i], season[i], watchedTill[i])
+        if epi:
+            new_epi_of_series.append(epi)
+        time.sleep(5)
+        end = time.time()
+        print("Time lapsed:{0}s".format(int(end-start)), end='\n')
+    return new_epi_of_series
+
+
+def main():
+    global start
+    start = time.time()
+    new_epi_of_series = seriesScraper()
+    if new_epi_of_series:
+        print("\nCongratz! Looks like you've got some new episodes for the following:")
+        for i in new_epi_of_series:
+            print(i, end='\n\n')
+        print("Update your episode number when you watch the episode.")
+    else:
+        print("Oops. Guess no new episodes for any of your series are available .")
 
 
 if __name__ == '__main__':
