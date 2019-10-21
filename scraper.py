@@ -8,6 +8,7 @@ import time
 
 BASE_URL = "https://fmovies.to"
 start = ""
+retryCount = 0
 
 
 def get_last_epi(series_name, season):
@@ -34,10 +35,15 @@ def get_last_epi(series_name, season):
 
     # Scrape last episode
     session = HTMLSession()
-    req = session.get('{0}{1}'.format(BASE_URL, result))
+    try:
+        req = session.get('{0}{1}'.format(BASE_URL, result))
+    except:
+        print("Couldn't connect to internet")
+        raise SystemExit()
+
     req.html.render(timeout=20000)
     try:
-        server = req.html.find('.episodes.range.active')[1]
+        server = req.html.find('.episodes.range.active')[0]
         episodes = BeautifulSoup(server.html, 'html.parser')
         e = episodes.find_all("a")
         total_episodes = len(e)
@@ -48,7 +54,6 @@ def get_last_epi(series_name, season):
         return None, 0
     req.close()
     session.close()
-
     return {
         "name": series_name, "latest_episode_num": last_episode_num,
         "latest_episode_link": '{0}{1}'.format(BASE_URL, last_episode_link),
@@ -57,17 +62,26 @@ def get_last_epi(series_name, season):
 
 
 def check_for_new_epi(series_name, season, watchedTill):
+    global retryCount
     status = 0
-    print("Looking up '{0} s{1}'...".format(series_name, season), end="")
+    print("Looking up '{0} s{1}'...".format(series_name, season))
+    retryCount = 0
     while not status:
+        retryCount += 1
         info, status = get_last_epi(
             series_name.capitalize(), str(season)
         )
-
         if not status:
             print("Problem with connection. Retrying..")
+            time.sleep(1)
+        if retryCount > 5:
+            break
+    try:
+        diff = info['latest_episode_num'] - watchedTill
+    except:
+        print("Couldnt obtain data. Skipping...")
+        return None
     print("DONE!")
-    diff = info['latest_episode_num'] - watchedTill
     if(diff > 0):
         info["new_epi_count"] = diff
         return info
@@ -89,6 +103,7 @@ def seriesScraper():
         time.sleep(5)
         end = time.time()
         print("Time lapsed:{0}s".format(int(end-start)), end='\n')
+
     return new_epi_of_series
 
 
@@ -100,7 +115,7 @@ def main():
         print("\nCongratz! Looks like you've got some new episodes for the following:")
         for i in new_epi_of_series:
             print(i, end='\n\n')
-        print("Update your episode number when you watch the episode.")
+        print("Update your episode number for the series after you watch the episode.")
     else:
         print("Oops. Guess no new episodes for any of your series are available .")
 
