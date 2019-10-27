@@ -1,7 +1,6 @@
 '''Scrape info on series'''
 from bs4 import BeautifulSoup
 from requests_html import HTMLSession
-from pprint import pprint
 import requests
 import pandas as pd
 import time
@@ -43,7 +42,7 @@ def get_last_epi(series_name, season):
 
     req.html.render(timeout=20000)
     try:
-        server = req.html.find('.episodes.range.active')[0]
+        server = req.html.find('.episodes.range.active')[1]
         episodes = BeautifulSoup(server.html, 'html.parser')
         e = episodes.find_all("a")
         total_episodes = len(e)
@@ -74,7 +73,7 @@ def check_for_new_epi(series_name, season, watchedTill):
         if not status:
             print("Problem with connection. Retrying..")
             time.sleep(1)
-        if retryCount > 5:
+        if retryCount >= 5:
             break
     try:
         diff = info['latest_episode_num'] - watchedTill
@@ -89,6 +88,8 @@ def check_for_new_epi(series_name, season, watchedTill):
 
 
 def seriesScraper():
+    global start
+    start = time.time()
     data = pd.read_csv('./data.csv', delimiter=',')
     series_name = data['series']
     season = data['season']
@@ -103,13 +104,10 @@ def seriesScraper():
         time.sleep(5)
         end = time.time()
         print("Time lapsed:{0}s".format(int(end-start)), end='\n')
-
     return new_epi_of_series
 
 
 def main():
-    global start
-    start = time.time()
     new_epi_of_series = seriesScraper()
     if new_epi_of_series:
         print("\nCongratz! Looks like you've got some new episodes for the following:")
