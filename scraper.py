@@ -4,7 +4,9 @@ from requests_html import HTMLSession
 import requests
 import pandas as pd
 import time
-
+import os
+import json
+from datetime import datetime
 BASE_URL = "https://fmovies.to"
 start = ""
 retryCount = 0
@@ -40,7 +42,7 @@ def get_last_epi(series_name, season):
         print("Couldn't connect to internet")
         raise SystemExit()
 
-    req.html.render(timeout=20000)
+    req.html.render(timeout=5000)
     try:
         server = req.html.find('.episodes.range.active')[1]
         episodes = BeautifulSoup(server.html, 'html.parser')
@@ -73,7 +75,7 @@ def check_for_new_epi(series_name, season, watchedTill):
         if not status:
             print("Problem with connection. Retrying..")
             time.sleep(1)
-        if retryCount >= 5:
+        if retryCount >= 2:
             break
     try:
         diff = info['latest_episode_num'] - watchedTill
@@ -90,7 +92,7 @@ def check_for_new_epi(series_name, season, watchedTill):
 def seriesScraper():
     global start
     start = time.time()
-    data = pd.read_csv('./data.csv', delimiter=',')
+    data = pd.read_csv('../data.csv', delimiter=',')
     series_name = data['series']
     season = data['season']
     watchedTill = data['epi']
@@ -98,7 +100,8 @@ def seriesScraper():
     print('\nScraping metadata on the list of series ...\n')
 
     for i in range(len(series_name)):
-        epi = check_for_new_epi(series_name[i], season[i], watchedTill[i])
+        epi = check_for_new_epi(series_name[i], int(
+            season[i]), int(watchedTill[i]))
         if epi:
             new_epi_of_series.append(epi)
         time.sleep(5)
@@ -109,13 +112,25 @@ def seriesScraper():
 
 def main():
     new_epi_of_series = seriesScraper()
-    if new_epi_of_series:
-        print("\nCongratz! Looks like you've got some new episodes for the following:")
-        for i in new_epi_of_series:
-            print(i, end='\n\n')
-        print("Update your episode number for the series after you watch the episode.")
-    else:
-        print("Oops. Guess no new episodes for any of your series are available .")
+    pwd = os.getcwd()
+    path_to_file = os.path.join(pwd, 'series.temp.json')
+
+    if not os.path.exists(pwd) and not os.path.isfile(path_to_file):
+        os.makedirs(path_to_file)
+    try:
+        with open(path_to_file, 'w') as f:
+            data = {
+                'data': new_epi_of_series,
+                'date': datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+            }
+            f.write(json.dumps(data))
+            f.close()
+        if os.path.exists(os.path.join(pwd, 'series.json')):
+            os.remove('series.json')
+        os.rename('series.temp.json', 'series.json')
+        print('Records updated.')
+    except:
+        print('Records were not updated.')
 
 
 if __name__ == '__main__':
